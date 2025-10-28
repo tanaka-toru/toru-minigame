@@ -1,0 +1,441 @@
+<html>
+<head>
+<meta charset="utf-8">
+</head>
+<body>
+
+<style>
+    :root {
+      --bg: #0f1224;
+      --panel: #15193a;
+      --text: #e9ecff;
+      --accent: #7aa2ff;
+      --accent-2: #61e7c8;
+      --danger: #ff6b6b;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans JP, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+      background: radial-gradient(1200px 600px at 50% -10%, #1b1f46 0%, var(--bg) 60%);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+    }
+
+    .wrap {
+      width: min(92vw, 520px);
+      display: grid;
+      gap: 10px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: linear-gradient(180deg, #171b3f 0%, var(--panel) 100%);
+      border: 1px solid #21275b;
+      border-radius: 16px;
+      padding: 10px 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.05);
+    }
+    header h1 {
+      font-size: 16px;
+      margin: 0;
+      letter-spacing: .02em;
+      font-weight: 700;
+    }
+    .badges {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .tag {
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #0f1333;
+      border: 1px solid #2a3174;
+      color: #cfd6ff;
+    }
+
+    canvas {
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      background: linear-gradient(180deg, #0c0f29, #0b1120);
+      border-radius: 16px;
+      border: 1px solid #1b2152;
+      display: block;
+      box-shadow: 0 20px 40px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.03);
+    }
+
+    .hud {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .score, .hi {
+      background: #0e1533cc;
+      border: 1px solid #2b3472;
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+    }
+    .hi { justify-self: end; }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    button {
+      -webkit-tap-highlight-color: transparent;
+      appearance: none;
+      border: 0;
+      background: linear-gradient(180deg, #1a2050, #12163c);
+      border: 1px solid #2b3472;
+      color: var(--text);
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 6px 18px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06);
+      transition: transform .06s ease, box-shadow .2s ease;
+    }
+    button:active { transform: translateY(1px); }
+    .accent { border-color: #2d7bff; }
+    .ghost { background: transparent; }
+
+    .mobile-pad {
+      display: none;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      margin-top: 6px;
+    }
+    .mobile-pad button { padding: 16px; }
+
+    @media (pointer: coarse), (max-width: 560px) {
+      .mobile-pad { display: grid; }
+    }
+
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+    }
+  </style>
+  <div class="wrap">
+    <header>
+      <h1>避けゲー mini</h1>
+      <div class="badges">
+        <span class="tag">←→ で移動 / Spaceで一時停止</span>
+      </div>
+    </header>
+
+    <canvas id="game" width="360" height="480" aria-label="ゲームキャンバス" role="img"></canvas>
+
+    <div class="hud" aria-live="polite">
+      <div class="score">SCORE: <span id="score">0</span></div>
+      <div class="hi">BEST: <span id="best">0</span></div>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn" class="accent">▶︎ スタート / リスタート</button>
+      <button id="pauseBtn">⏸ 一時停止</button>
+      <button id="muteBtn" class="ghost">🔈 サウンド</button>
+    </div>
+
+    <div class="mobile-pad" aria-hidden="false">
+      <button id="leftBtn">◀︎ 左</button>
+      <button id="slowBtn">⏷ 減速</button>
+      <button id="rightBtn">右 ▶︎</button>
+    </div>
+
+    <p class="sr-only" id="liveText"></p>
+  </div>
+
+  <script>
+    // === シンプルな避けゲーム ===
+    // 目的: 自機(プレイヤー)を左右に動かし、上から落ちてくる障害物を避け続ける
+
+    const cvs = document.getElementById('game');
+    const ctx = cvs.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const bestEl = document.getElementById('best');
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const muteBtn = document.getElementById('muteBtn');
+    const leftBtn = document.getElementById('leftBtn');
+    const rightBtn = document.getElementById('rightBtn');
+    const slowBtn = document.getElementById('slowBtn');
+    const liveText = document.getElementById('liveText');
+
+    const W = cvs.width;
+    const H = cvs.height;
+
+    // ゲーム状態
+    let running = false;
+    let paused = false;
+    let frame = 0;
+    let score = 0;
+    let best = Number(localStorage.getItem('mini_dodge_best') || 0);
+    bestEl.textContent = best;
+
+    // サウンド (小さなビープをWebAudioで生成)
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioCtx();
+    let muted = false;
+
+    function beep(type = 'sine', freq = 660, duration = 0.08, vol = 0.05) {
+      if (muted) return;
+      const t0 = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(vol, t0);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t0);
+      osc.stop(t0 + duration);
+    }
+
+    // プレイヤー
+    const player = {
+      x: W/2,
+      y: H - 40,
+      r: 12,
+      vx: 0,
+      speed: 3.2,
+      color1: '#61e7c8',
+      color2: '#7aa2ff'
+    };
+
+    // 障害物
+    const hazards = [];
+    function spawnHazard() {
+      const size = 10 + Math.random() * 22; // 半径
+      const x = size + Math.random() * (W - size*2);
+      const y = -size - 10;
+      const vy = 1.6 + Math.random() * 2.6 + Math.min(2.5, score * 0.002);
+      const hue = 200 + Math.random()*100;
+      hazards.push({ x, y, r: size, vy, hue });
+    }
+
+    // 入力
+    const keys = new Set();
+    addEventListener('keydown', (e) => {
+      if (e.key === ' '){
+        togglePause();
+        e.preventDefault();
+        return;
+      }
+      keys.add(e.key);
+    });
+    addEventListener('keyup', (e) => keys.delete(e.key));
+
+    // モバイルボタン
+    let leftHeld = false, rightHeld = false, slowHeld = false;
+    function hold(btn, setter) {
+      btn.addEventListener('pointerdown', () => { setter(true); btn.setPointerCapture; });
+      btn.addEventListener('pointerup',   () => setter(false));
+      btn.addEventListener('pointerleave',() => setter(false));
+      btn.addEventListener('pointercancel',() => setter(false));
+    }
+    hold(leftBtn, v => leftHeld = v);
+    hold(rightBtn, v => rightHeld = v);
+    hold(slowBtn, v => slowHeld = v);
+
+    // ユーティリティ
+    function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
+
+    // 描画ヘルパー
+    function drawBackground() {
+      // 星っぽい背景
+      const g = ctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, '#0d102d');
+      g.addColorStop(1, '#0a1022');
+      ctx.fillStyle = g;
+      ctx.fillRect(0,0,W,H);
+
+      // グリッドのライン
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 6; i++) {
+        const x = (W/6)*i; ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+      }
+      for (let j = 0; j <= 8; j++) {
+        const y = (H/8)*j; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+      }
+    }
+
+    function drawPlayer(p) {
+      const grd = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, p.r);
+      grd.addColorStop(0, p.color1);
+      grd.addColorStop(1, p.color2);
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+      ctx.fill();
+      // 外枠
+      ctx.strokeStyle = 'rgba(255,255,255,.35)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    function drawHazard(h) {
+      ctx.fillStyle = `hsl(${h.hue} 80% 60%)`;
+      ctx.beginPath();
+      ctx.rect(h.x - h.r, h.y - h.r, h.r*2, h.r*2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.15)';
+      ctx.strokeRect(h.x - h.r, h.y - h.r, h.r*2, h.r*2);
+    }
+
+    function collideCircleRect(cx, cy, cr, rx, ry, rw, rh){
+      // 円と矩形の簡易当たり判定
+      const closestX = clamp(cx, rx, rx+rw);
+      const closestY = clamp(cy, ry, ry+rh);
+      const dx = cx - closestX;
+      const dy = cy - closestY;
+      return (dx*dx + dy*dy) <= cr*cr;
+    }
+
+    // メインループ
+    let last = 0;
+    function loop(ts){
+      if (!running) return;
+      if (paused) { requestAnimationFrame(loop); return; }
+
+      const dt = (ts - last) / 16.666; // ~60fps基準
+      last = ts;
+      frame++;
+
+      // 更新
+      const moveLeft = keys.has('ArrowLeft') || keys.has('a') || leftHeld;
+      const moveRight = keys.has('ArrowRight') || keys.has('d') || rightHeld;
+      const damping = slowHeld || keys.has('Shift') ? 0.55 : 1;
+
+      if (moveLeft) player.vx -= 0.4 * damping;
+      if (moveRight) player.vx += 0.4 * damping;
+
+      // 摩擦
+      player.vx *= 0.92;
+      player.vx = clamp(player.vx, -player.speed, player.speed);
+      player.x += player.vx * dt * 1.1;
+      player.x = clamp(player.x, player.r + 2, W - player.r - 2);
+
+      // 障害物生成 (徐々に頻度アップ)
+      const spawnEvery = Math.max(10, 60 - Math.floor(score/50));
+      if (frame % spawnEvery === 0) spawnHazard();
+
+      for (let i = hazards.length - 1; i >= 0; i--) {
+        const h = hazards[i];
+        h.y += h.vy * dt;
+        if (h.y - h.r > H + 20) hazards.splice(i,1);
+        if (collideCircleRect(player.x, player.y, player.r, h.x - h.r, h.y - h.r, h.r*2, h.r*2)) {
+          gameOver();
+          return;
+        }
+      }
+
+      // スコア
+      score += 1 * dt;
+      scoreEl.textContent = Math.floor(score);
+
+      // 描画
+      ctx.clearRect(0,0,W,H);
+      drawBackground();
+      for (const h of hazards) drawHazard(h);
+      drawPlayer(player);
+
+      // HUDのガイド
+      ctx.fillStyle = 'rgba(255,255,255,.18)';
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.fillText('避け続けてスコアを伸ばそう!', 10, 18);
+
+      requestAnimationFrame(loop);
+    }
+
+    function start() {
+      // iOSのオーディオ解放
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      running = true; paused = false; frame = 0; score = 0;
+      hazards.length = 0;
+      player.x = W/2; player.vx = 0;
+      scoreEl.textContent = '0';
+      liveText.textContent = 'ゲーム開始';
+      beep('triangle', 880, 0.1, 0.06);
+      last = performance.now();
+      requestAnimationFrame(loop);
+    }
+
+    function gameOver() {
+      running = false;
+      const finalScore = Math.floor(score);
+      if (finalScore > best) { best = finalScore; localStorage.setItem('mini_dodge_best', String(best)); }
+      bestEl.textContent = best;
+
+      // フラッシュ演出
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 107, 107, 0.18)';
+      ctx.fillRect(0,0,W,H);
+      ctx.restore();
+
+      // 終了表示
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 28px system-ui, sans-serif';
+      ctx.fillText('GAME OVER', W/2, H/2 - 8);
+      ctx.font = '16px system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,.85)';
+      ctx.fillText(`SCORE ${finalScore} / BEST ${best}`, W/2, H/2 + 20);
+      ctx.fillText('▶︎ スタート / リスタート を押して再開', W/2, H/2 + 44);
+      liveText.textContent = `ゲームオーバー。スコア ${finalScore}`;
+      beep('sawtooth', 220, 0.18, 0.06);
+      setTimeout(() => beep('sawtooth', 160, 0.18, 0.06), 70);
+    }
+
+    function togglePause(){
+      if (!running) return;
+      paused = !paused;
+      pauseBtn.textContent = paused ? '▶ 再開' : '⏸ 一時停止';
+      liveText.textContent = paused ? '一時停止' : '再開';
+      if (!paused) last = performance.now();
+      beep('square', paused ? 320 : 520, 0.08, 0.04);
+    }
+
+    // ボタンイベント
+    startBtn.addEventListener('click', () => start());
+    pauseBtn.addEventListener('click', togglePause);
+    muteBtn.addEventListener('click', () => {
+      muted = !muted; muteBtn.textContent = muted ? '🔇 ミュート' : '🔈 サウンド';
+    });
+
+    // 画面外で自動一時停止
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && running && !paused) togglePause();
+    });
+
+    // 初期描画 (待機画面)
+    (function drawTitle(){
+      ctx.clearRect(0,0,W,H);
+      drawBackground();
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 28px system-ui, sans-serif';
+      ctx.fillText('避けゲー mini', W/2, H/2 - 12);
+      ctx.font = '16px system-ui, sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,.85)';
+      ctx.fillText('▶︎ スタート / リスタート で開始', W/2, H/2 + 14);
+      ctx.fillText('← → で移動 / Shiftで減速', W/2, H/2 + 36);
+    })();
+  </script>
+
+</body>
+</html>
